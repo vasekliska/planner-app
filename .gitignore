@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Databáze (lokální SQLite – na Render se nepoužívá)
+data/
+
+# Prostředí
+.env
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Přihlášky – Planner Admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .page-wrap { padding: 32px 0 56px; }
+    .filters-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+    .filters-row select { max-width: 220px; }
+    .status-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="container header-inner">
+      <a href="/admin/kurzy.html" class="header-logo">🗓️ Planner Admin</a>
+      <nav class="header-nav">
+        <a href="/admin/kurzy.html" class="nav-link">Kurzy</a>
+        <a href="/admin/registrace.html" class="nav-link active">Přihlášky</a>
+        <button class="btn btn-ghost btn-sm" id="logout-btn">Odhlásit</button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container page-wrap">
+
+    <div class="stats-grid" id="stats-grid"></div>
+
+    <div class="section-header">
+      <div>
+        <h1 class="page-title">Přihlášky</h1>
+        <p class="page-subtitle">Správa přihlášek a plateb</p>
+      </div>
+    </div>
+
+    <div id="alert"></div>
+
+    <div class="filters-row">
+      <select class="form-select" id="filter-course" style="max-width:260px;">
+        <option value="">Všechny kurzy</option>
+      </select>
+      <select class="form-select" id="filter-status" style="max-width:180px;">
+        <option value="">Všechny stavy</option>
+        <option value="pending">Čeká na platbu</option>
+        <option value="paid">Zaplaceno</option>
+        <option value="cancelled">Zrušeno</option>
+      </select>
+    </div>
+
+    <div class="card" style="padding:0;">
+      <div class="table-wrap">
+        <div id="loading" style="text-align:center;padding:48px;"><span class="spinner"></span></div>
+        <table id="table" style="display:none;">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Účastník</th>
+              <th>Kontakt</th>
+              <th>Kurz</th>
+              <th>Datum kurzu</th>
+              <th>Var. symbol</th>
+              <th>Cena</th>
+              <th>Platba</th>
+              <th>Přihlášen</th>
+              <th>Akce</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div id="empty" class="empty-state" style="display:none;">Žádné přihlášky.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail modal -->
+  <div class="modal-overlay" id="detail-modal">
+    <div class="modal" style="max-width:480px;">
+      <h2 class="modal-title">Detail přihlášky</h2>
+      <div id="detail-content"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="detail-close">Zavřít</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = sessionStorage.getItem('adminToken');
+    if (!token) window.location.replace('/admin/');
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      sessionStorage.removeItem('adminToken');
+      window.location.replace('/admin/');
+    });
+
+    const h = { 'Content-Type': 'application/json', 'X-Admin-Token': token };
+
+    let allRegs   = [];
+    let courses   = [];
+
+    // Pre-filter from URL (?kurz=ID)
+    const urlParams   = new URLSearchParams(location.search);
+    const preFilterCourse = urlParams.get('kurz') || '';
+
+    async function loadData() {
+      try {
+        const [rRes, cRes] = await Promise.all([
+          fetch('/api/admin/registrations', { headers: h }),
+          fetch('/api/admin/courses',       { headers: h }),
+        ]);
+        if (rRes.status === 401 || cRes.status === 401) { logout(); return; }
+        allRegs = await rRes.json();
+        courses = await cRes.json();
+        populateCourseFilter();
+        renderStats();
+        renderTable();
+      } catch {
+        showAlert('Nepodařilo se načíst data.', 'error');
+      } finally {
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    function populateCourseFilter() {
+      const sel = document.getElementById('filter-course');
+      // unique courses from registrations
+      const seen = new Set();
+      allRegs.forEach(r => {
+        if (!seen.has(r.course_id)) {
+          seen.add(r.course_id);
+          const opt = document.createElement('option');
+          opt.value       = r.course_id;
+          opt.textContent = r.course_name;
+          if (String(r.course_id) === preFilterCourse) opt.selected = true;
+          sel.appendChild(opt);
+        }
+      });
+      if (preFilterCourse) sel.value = preFilterCourse;
+    }
+
+    function getFiltered() {
+      const courseF = document.getElementById('filter-course').value;
+      const statusF = document.getElementById('filter-status').value;
+      return allRegs.filter(r => {
+        if (courseF && String(r.course_id) !== courseF) return false;
+        if (statusF && r.payment_status !== statusF)   return false;
+        return true;
+      });
+    }
+
+    function renderStats() {
+      const total     = allRegs.length;
+      const paid      = allRegs.filter(r => r.payment_status === 'paid').length;
+      const pending   = allRegs.filter(r => r.payment_status === 'pending').length;
+      const cancelled = allRegs.filter(r => r.payment_status === 'cancelled').length;
+      document.getElementById('stats-grid').innerHTML = `
+        <div class="stat-card"><div class="stat-value">${total}</div><div class="stat-label">Celkem přihlášek</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--success);">${paid}</div><div class="stat-label">Zaplaceno</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--warning);">${pending}</div><div class="stat-label">Čeká na platbu</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--danger);">${cancelled}</div><div class="stat-label">Zrušeno</div></div>
+      `;
+    }
+
+    function renderTable() {
+      const filtered = getFiltered();
+      const table    = document.getElementById('table');
+      const empty    = document.getElementById('empty');
+      const tbody    = document.getElementById('tbody');
+
+      if (filtered.length === 0) {
+        table.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+
+      tbody.innerHTML = filtered.map(r => {
+        const statusBadge = {
+          pending:   '<span class="badge badge-yellow">Čeká na platbu</span>',
+          paid:      '<span class="badge badge-green">Zaplaceno</span>',
+          cancelled: '<span class="badge badge-red">Zrušeno</span>',
+        }[r.payment_status] || '';
+
+        return `
+          <tr>
+            <td style="color:var(--gray-400);font-size:.85rem;">${r.id}</td>
+            <td>
+              <strong>${esc(r.first_name)} ${esc(r.last_name)}</strong>
+              ${r.notes ? `<br><span style="font-size:.78rem;color:var(--gray-400);" title="${esc(r.notes)}">💬 ${esc(r.notes.substring(0,40))}${r.notes.length > 40 ? '…' : ''}</span>` : ''}
+            </td>
+            <td>
+              <div>${esc(r.email)}</div>
+              ${r.phone ? `<div style="color:var(--gray-400);font-size:.85rem;">${esc(r.phone)}</div>` : ''}
+            </td>
+            <td>${esc(r.course_name)}</td>
+            <td style="white-space:nowrap;">${fmtDate(r.course_date)}</td>
+            <td><code style="font-size:.85rem;">${esc(r.variable_symbol)}</code></td>
+            <td style="white-space:nowrap;">${Number(r.course_price) > 0 ? Number(r.course_price).toLocaleString('cs-CZ') + ' Kč' : 'Zdarma'}</td>
+            <td>${statusBadge}</td>
+            <td style="white-space:nowrap;font-size:.85rem;color:var(--gray-400);">${fmtDatetime(r.registered_at)}</td>
+            <td>
+              <div class="status-btns">
+                ${r.payment_status !== 'paid'       ? `<button class="btn btn-success btn-xs" onclick="setStatus(${r.id}, 'paid')">Zaplaceno</button>` : ''}
+                ${r.payment_status !== 'pending'    ? `<button class="btn btn-ghost btn-xs" onclick="setStatus(${r.id}, 'pending')">Čeká</button>` : ''}
+                ${r.payment_status !== 'cancelled'  ? `<button class="btn btn-danger btn-xs" onclick="setStatus(${r.id}, 'cancelled')">Zrušit</button>` : ''}
+                <button class="btn btn-ghost btn-xs" onclick="deleteReg(${r.id})">🗑</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Actions ────────────────────────────────────────────────
+    async function setStatus(id, status) {
+      try {
+        const res = await fetch(`/api/admin/registrations/${id}/payment`, {
+          method: 'PATCH',
+          headers: h,
+          body: JSON.stringify({ payment_status: status }),
+        });
+        if (!res.ok) throw new Error();
+        const updated = await res.json();
+        allRegs = allRegs.map(r => r.id === id ? { ...r, payment_status: updated.payment_status } : r);
+        renderStats();
+        renderTable();
+        showAlert('Stav platby byl aktualizován.', 'success');
+      } catch {
+        showAlert('Nepodařilo se změnit stav platby.', 'error');
+      }
+    }
+
+    async function deleteReg(id) {
+      if (!confirm('Opravdu chcete přihlášku smazat? Tato akce je nevratná.')) return;
+      try {
+        const res = await fetch(`/api/admin/registrations/${id}`, { method: 'DELETE', headers: h });
+        if (!res.ok) throw new Error();
+        allRegs = allRegs.filter(r => r.id !== id);
+        renderStats();
+        renderTable();
+        showAlert('Přihláška byla smazána.', 'success');
+      } catch {
+        showAlert('Nepodařilo se smazat přihlášku.', 'error');
+      }
+    }
+
+    // ── Filters ────────────────────────────────────────────────
+    document.getElementById('filter-course').addEventListener('change', renderTable);
+    document.getElementById('filter-status').addEventListener('change', renderTable);
+
+    // ── Detail modal ───────────────────────────────────────────
+    document.getElementById('detail-close').addEventListener('click', () => {
+      document.getElementById('detail-modal').classList.remove('open');
+    });
+
+    // ── Helpers ────────────────────────────────────────────────
+    function showAlert(msg, type = 'success') {
+      const el = document.getElementById('alert');
+      el.innerHTML = `<div class="alert alert-${type}">${esc(msg)}</div>`;
+      setTimeout(() => { el.innerHTML = ''; }, 4000);
+    }
+    function logout() {
+      sessionStorage.removeItem('adminToken');
+      window.location.replace('/admin/');
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function fmtDate(d) {
+      if (!d) return '';
+      const [y,m,day] = d.split('-');
+      return `${day}.${m}.${y}`;
+    }
+    function fmtDatetime(dt) {
+      if (!dt) return '';
+      return dt.replace('T', ' ').substring(0, 16);
+    }
+
+    loadData();
+  </script>
+
+</body>
+</html>

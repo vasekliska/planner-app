@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kurzy – Planner Admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .page-wrap { padding: 32px 0 56px; }
+    .inactive-row td { opacity: .5; }
+    .toggle-active { cursor: pointer; font-size: .8rem; }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="container header-inner">
+      <a href="/admin/kurzy.html" class="header-logo">🗓️ Planner Admin</a>
+      <nav class="header-nav">
+        <a href="/admin/kurzy.html" class="nav-link active">Kurzy</a>
+        <a href="/admin/registrace.html" class="nav-link">Přihlášky</a>
+        <button class="btn btn-ghost btn-sm" id="logout-btn">Odhlásit</button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container page-wrap">
+
+    <div class="stats-grid" id="stats-grid"></div>
+
+    <div class="section-header">
+      <div>
+        <h1 class="page-title">Kurzy</h1>
+        <p class="page-subtitle">Správa kurzů a událostí</p>
+      </div>
+      <button class="btn btn-primary" id="add-btn">+ Přidat kurz</button>
+    </div>
+
+    <div id="alert"></div>
+
+    <div class="card" style="padding:0;">
+      <div class="table-wrap">
+        <div id="loading" style="text-align:center;padding:48px;"><span class="spinner"></span></div>
+        <table id="table" style="display:none;">
+          <thead>
+            <tr>
+              <th>Název</th>
+              <th>Datum / Čas</th>
+              <th>Místo</th>
+              <th>Typ</th>
+              <th>Cena</th>
+              <th>Kapacita</th>
+              <th>Stav</th>
+              <th>Akce</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <div id="empty" class="empty-state" style="display:none;">Žádné kurzy. Přidejte první kurz.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: add/edit -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <h2 class="modal-title" id="modal-title">Nový kurz</h2>
+      <div id="modal-alert"></div>
+      <form id="course-form" novalidate>
+        <input type="hidden" id="f-id" />
+
+        <div class="form-group">
+          <label class="form-label">Název *</label>
+          <input class="form-input" id="f-name" required placeholder="Název kurzu" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Datum *</label>
+            <input class="form-input" id="f-date" type="date" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Čas *</label>
+            <input class="form-input" id="f-time" required placeholder="18:00 – 20:00" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Místo *</label>
+          <input class="form-input" id="f-location" required placeholder="Praha 1, Náměstí míru 5" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Popis</label>
+          <textarea class="form-textarea" id="f-description" placeholder="Popis kurzu, co se účastníci naučí…"></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Typ *</label>
+            <select class="form-select" id="f-type">
+              <option value="jednorázový">Jednorázový</option>
+              <option value="pravidelný">Pravidelný</option>
+            </select>
+          </div>
+          <div class="form-group" id="recurring-group" style="display:none;">
+            <label class="form-label">Info o opakování</label>
+            <input class="form-input" id="f-recurring-info" placeholder="Každý čtvrtek, 4 lekce" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Kapacita *</label>
+            <input class="form-input" id="f-capacity" type="number" min="1" required placeholder="20" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cena (Kč)</label>
+            <input class="form-input" id="f-price" type="number" min="0" step="0.01" placeholder="1500" />
+          </div>
+        </div>
+
+        <div class="form-group" id="active-group" style="display:none;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="f-active" style="width:16px;height:16px;" />
+            <span class="form-label" style="margin:0;">Aktivní (zobrazit na webu)</span>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">Zrušit</button>
+          <button type="submit" class="btn btn-primary" id="modal-save">Uložit</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const token = sessionStorage.getItem('adminToken');
+    if (!token) window.location.replace('/admin/');
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      sessionStorage.removeItem('adminToken');
+      window.location.replace('/admin/');
+    });
+
+    const h = { 'Content-Type': 'application/json', 'X-Admin-Token': token };
+
+    let courses = [];
+
+    async function loadCourses() {
+      try {
+        const res = await fetch('/api/admin/courses', { headers: h });
+        if (res.status === 401) { logout(); return; }
+        courses = await res.json();
+        renderStats();
+        renderTable();
+      } catch {
+        showAlert('Nepodařilo se načíst kurzy.', 'error');
+      } finally {
+        document.getElementById('loading').style.display = 'none';
+      }
+    }
+
+    function renderStats() {
+      const total  = courses.length;
+      const active = courses.filter(c => c.is_active).length;
+      const grid   = document.getElementById('stats-grid');
+      grid.innerHTML = `
+        <div class="stat-card"><div class="stat-value">${total}</div><div class="stat-label">Celkem kurzů</div></div>
+        <div class="stat-card"><div class="stat-value">${active}</div><div class="stat-label">Aktivních</div></div>
+        <div class="stat-card"><div class="stat-value">${total - active}</div><div class="stat-label">Neaktivních</div></div>
+      `;
+    }
+
+    function renderTable() {
+      const table = document.getElementById('table');
+      const empty = document.getElementById('empty');
+      const tbody = document.getElementById('tbody');
+
+      if (courses.length === 0) {
+        table.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      table.style.display = 'table';
+
+      tbody.innerHTML = courses.map(c => {
+        const reg  = c.registered_count || 0;
+        const fill = c.capacity > 0 ? Math.min(100, Math.round(reg / c.capacity * 100)) : 0;
+        const cls  = fill >= 100 ? 'full' : fill >= 80 ? 'near' : '';
+        return `
+          <tr class="${c.is_active ? '' : 'inactive-row'}">
+            <td><strong>${esc(c.name)}</strong></td>
+            <td>${fmtDate(c.date)}<br><span style="color:var(--gray-400);font-size:.85rem;">${esc(c.time)}</span></td>
+            <td>${esc(c.location)}</td>
+            <td><span class="badge ${c.type === 'pravidelný' ? 'badge-green' : 'badge-blue'}">${esc(c.type)}</span></td>
+            <td>${c.price > 0 ? c.price.toLocaleString('cs-CZ') + ' Kč' : 'Zdarma'}</td>
+            <td>
+              <span style="font-size:.85rem;">${reg} / ${c.capacity}</span>
+              <div class="capacity-bar">
+                <div class="capacity-fill ${cls}" style="width:${fill}%"></div>
+              </div>
+            </td>
+            <td>
+              ${c.is_active
+                ? '<span class="badge badge-green">Aktivní</span>'
+                : '<span class="badge badge-gray">Neaktivní</span>'}
+            </td>
+            <td>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-xs" onclick="openEdit(${c.id})">Upravit</button>
+                <button class="btn btn-ghost btn-xs" onclick="toggleActive(${c.id}, ${c.is_active})">
+                  ${c.is_active ? 'Deaktivovat' : 'Aktivovat'}
+                </button>
+                <a href="/admin/registrace.html?kurz=${c.id}" class="btn btn-ghost btn-xs">Přihlášky (${reg})</a>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // ── Toggle active ──────────────────────────────────────────
+    async function toggleActive(id, currentActive) {
+      const c = courses.find(x => x.id === id);
+      if (!c) return;
+      try {
+        const res = await fetch(`/api/admin/courses/${id}`, {
+          method: 'PUT',
+          headers: h,
+          body: JSON.stringify({
+            name: c.name, date: c.date, time: c.time, location: c.location,
+            description: c.description, type: c.type, recurring_info: c.recurring_info,
+            capacity: c.capacity, price: c.price,
+            is_active: !currentActive,
+          }),
+        });
+        if (!res.ok) throw new Error();
+        const updated = await res.json();
+        courses = courses.map(x => x.id === id ? { ...x, ...updated } : x);
+        renderTable();
+      } catch {
+        showAlert('Nepodařilo se změnit stav kurzu.', 'error');
+      }
+    }
+
+    // ── Modal ──────────────────────────────────────────────────
+    function openAdd() {
+      document.getElementById('modal-title').textContent = 'Nový kurz';
+      document.getElementById('f-id').value = '';
+      document.getElementById('course-form').reset();
+      document.getElementById('active-group').style.display = 'none';
+      document.getElementById('modal-alert').innerHTML = '';
+      document.getElementById('modal-save').textContent = 'Vytvořit';
+      document.getElementById('modal').classList.add('open');
+    }
+
+    function openEdit(id) {
+      const c = courses.find(x => x.id === id);
+      if (!c) return;
+      document.getElementById('modal-title').textContent = 'Upravit kurz';
+      document.getElementById('f-id').value          = c.id;
+      document.getElementById('f-name').value        = c.name;
+      document.getElementById('f-date').value        = c.date;
+      document.getElementById('f-time').value        = c.time;
+      document.getElementById('f-location').value   = c.location;
+      document.getElementById('f-description').value = c.description;
+      document.getElementById('f-type').value        = c.type;
+      document.getElementById('f-recurring-info').value = c.recurring_info;
+      document.getElementById('f-capacity').value   = c.capacity;
+      document.getElementById('f-price').value      = c.price;
+      document.getElementById('f-active').checked   = !!c.is_active;
+      document.getElementById('active-group').style.display = 'block';
+      document.getElementById('recurring-group').style.display = c.type === 'pravidelný' ? 'block' : 'none';
+      document.getElementById('modal-alert').innerHTML = '';
+      document.getElementById('modal-save').textContent = 'Uložit změny';
+      document.getElementById('modal').classList.add('open');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('open');
+    }
+
+    document.getElementById('add-btn').addEventListener('click', openAdd);
+    document.getElementById('modal-cancel').addEventListener('click', closeModal);
+    document.getElementById('modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal')) closeModal();
+    });
+
+    document.getElementById('f-type').addEventListener('change', e => {
+      document.getElementById('recurring-group').style.display =
+        e.target.value === 'pravidelný' ? 'block' : 'none';
+    });
+
+    document.getElementById('course-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const id   = document.getElementById('f-id').value;
+      const btn  = document.getElementById('modal-save');
+      const alrt = document.getElementById('modal-alert');
+
+      const name     = document.getElementById('f-name').value.trim();
+      const date     = document.getElementById('f-date').value;
+      const time     = document.getElementById('f-time').value.trim();
+      const location = document.getElementById('f-location').value.trim();
+      const capacity = parseInt(document.getElementById('f-capacity').value);
+
+      if (!name || !date || !time || !location || !capacity) {
+        alrt.innerHTML = '<div class="alert alert-error">Vyplňte všechna povinná pole.</div>';
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Ukládám…';
+      alrt.innerHTML  = '';
+
+      const payload = {
+        name, date, time, location,
+        description:   document.getElementById('f-description').value.trim(),
+        type:          document.getElementById('f-type').value,
+        recurring_info: document.getElementById('f-recurring-info').value.trim(),
+        capacity,
+        price: parseFloat(document.getElementById('f-price').value) || 0,
+        is_active: id ? document.getElementById('f-active').checked : true,
+      };
+
+      try {
+        const url = id ? `/api/admin/courses/${id}` : '/api/admin/courses';
+        const method = id ? 'PUT' : 'POST';
+        const res = await fetch(url, { method, headers: h, body: JSON.stringify(payload) });
+        const data = await res.json();
+        if (!res.ok) {
+          alrt.innerHTML = `<div class="alert alert-error">${esc(data.detail || 'Chyba při ukládání.')}</div>`;
+          btn.disabled    = false;
+          btn.textContent = id ? 'Uložit změny' : 'Vytvořit';
+          return;
+        }
+        if (id) {
+          courses = courses.map(c => c.id === parseInt(id) ? { ...c, ...data } : c);
+        } else {
+          courses.unshift({ ...data, registered_count: 0 });
+        }
+        renderStats();
+        renderTable();
+        closeModal();
+        showAlert(id ? 'Kurz byl upraven.' : 'Kurz byl vytvořen.', 'success');
+      } catch {
+        alrt.innerHTML = '<div class="alert alert-error">Chyba připojení.</div>';
+        btn.disabled    = false;
+        btn.textContent = id ? 'Uložit změny' : 'Vytvořit';
+      }
+    });
+
+    // ── Helpers ────────────────────────────────────────────────
+    function showAlert(msg, type = 'success') {
+      const el = document.getElementById('alert');
+      el.innerHTML = `<div class="alert alert-${type}">${esc(msg)}</div>`;
+      setTimeout(() => { el.innerHTML = ''; }, 4000);
+    }
+    function logout() {
+      sessionStorage.removeItem('adminToken');
+      window.location.replace('/admin/');
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function fmtDate(d) {
+      if (!d) return '';
+      const [y,m,day] = d.split('-');
+      return `${day}.${m}.${y}`;
+    }
+
+    loadCourses();
+  </script>
+
+</body>
+</html>

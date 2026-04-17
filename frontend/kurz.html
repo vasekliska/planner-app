@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detail kurzu – Planner</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .detail-wrap { max-width: 780px; margin: 0 auto; padding: 36px 16px 56px; }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 20px 0;
+    }
+    @media (max-width: 540px) { .detail-grid { grid-template-columns: 1fr; } }
+
+    .detail-item { background: var(--gray-50); padding: 12px 16px; border-radius: var(--radius-sm); }
+    .detail-item-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--gray-400); margin-bottom: 4px; }
+    .detail-item-value { font-weight: 600; color: var(--text); }
+
+    .success-box {
+      background: #f0fdf4;
+      border: 2px solid #86efac;
+      border-radius: var(--radius);
+      padding: 32px 24px;
+      text-align: center;
+    }
+    .success-icon { font-size: 2.8rem; margin-bottom: 10px; }
+    .success-box h3 { color: #15803d; font-size: 1.25rem; margin-bottom: 8px; }
+    .success-box p  { color: #166534; font-size: .95rem; }
+
+    .payment-box {
+      background: var(--primary-light);
+      border-radius: var(--radius-sm);
+      padding: 20px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    .payment-box-title { font-weight: 700; color: var(--primary); margin-bottom: 14px; font-size: .95rem; }
+    .payment-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid #c7d2fe;
+      font-size: .9rem;
+      gap: 16px;
+    }
+    .payment-row:last-child { border-bottom: none; font-weight: 700; }
+    .payment-row .lbl { color: var(--gray-600); flex-shrink: 0; }
+    .payment-row .val { font-family: monospace; font-size: .95rem; color: var(--text); word-break: break-all; }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <div class="container header-inner">
+      <a href="/" class="header-logo">Planner</a>
+    </div>
+  </header>
+
+  <div class="detail-wrap" id="app">
+    <div style="text-align:center;padding:60px 0;"><span class="spinner"></span></div>
+  </div>
+
+  <script>
+    const courseId = location.pathname.split('/').filter(Boolean).pop();
+
+    async function load() {
+      try {
+        const res = await fetch(`/api/courses/${courseId}`);
+        if (!res.ok) throw new Error();
+        renderCourse(await res.json());
+      } catch {
+        document.getElementById('app').innerHTML = `
+          <div class="alert alert-error">Kurz nebyl nalezen nebo již není dostupný.</div>
+          <a href="/" class="btn btn-outline" style="margin-top:8px;">← Zpět na výpis</a>
+        `;
+      }
+    }
+
+    function renderCourse(c) {
+      const reg    = c.registered_count || 0;
+      const isFull = reg >= c.capacity;
+      const fill   = c.capacity > 0 ? Math.min(100, Math.round(reg / c.capacity * 100)) : 0;
+      const cls    = fill >= 100 ? 'full' : fill >= 80 ? 'near' : '';
+      document.title = `${c.name} – Planner`;
+
+      document.getElementById('app').innerHTML = `
+        <a href="/" style="display:inline-flex;align-items:center;gap:4px;color:var(--gray-400);font-size:.9rem;margin-bottom:20px;">
+          ← Zpět na výpis
+        </a>
+
+        <div class="card" style="margin-bottom:24px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:4px;">
+            <span class="badge ${c.type === 'pravidelný' ? 'badge-green' : 'badge-blue'}">${esc(c.type)}</span>
+            <span style="font-size:1.4rem;font-weight:700;color:var(--primary);">
+              ${c.price > 0 ? c.price.toLocaleString('cs-CZ') + '&nbsp;Kč' : 'Zdarma'}
+            </span>
+          </div>
+
+          <h1 style="font-size:1.7rem;font-weight:700;margin:14px 0 16px;line-height:1.25;">${esc(c.name)}</h1>
+
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-item-label">Datum</div>
+              <div class="detail-item-value">${fmtDate(c.date)}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-item-label">Čas</div>
+              <div class="detail-item-value">${esc(c.time)}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-item-label">Místo</div>
+              <div class="detail-item-value">${esc(c.location)}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-item-label">Typ kurzu</div>
+              <div class="detail-item-value">${esc(c.type)}</div>
+            </div>
+          </div>
+
+          ${c.recurring_info ? `<div class="alert alert-info" style="margin-top:0;">🔄 ${esc(c.recurring_info)}</div>` : ''}
+
+          ${c.description ? `<p style="color:var(--gray-600);font-size:.95rem;line-height:1.65;margin-top:8px;">${esc(c.description)}</p>` : ''}
+
+          <div style="margin-top:20px;">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--gray-400);margin-bottom:6px;">
+              <span>Obsazenost</span>
+              <span>${reg} / ${c.capacity}</span>
+            </div>
+            <div class="capacity-bar" style="height:8px;">
+              <div class="capacity-fill ${cls}" style="width:${fill}%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="reg-section">
+          ${isFull
+            ? '<div class="alert alert-error">Kapacita kurzu je plně obsazena. Sledujte, zda se neuvolní místo.</div>'
+            : renderForm()
+          }
+        </div>
+      `;
+
+      if (!isFull) {
+        document.getElementById('reg-form').addEventListener('submit', e => submitReg(e, c));
+      }
+    }
+
+    function renderForm() {
+      return `
+        <div class="card">
+          <h2 style="font-size:1.2rem;font-weight:700;margin-bottom:20px;">Přihlásit se na kurz</h2>
+          <div id="reg-alert"></div>
+          <form id="reg-form" novalidate>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Jméno *</label>
+                <input class="form-input" name="first_name" required placeholder="Jan" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Příjmení *</label>
+                <input class="form-input" name="last_name" required placeholder="Novák" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">E-mail *</label>
+                <input class="form-input" name="email" type="email" required placeholder="jan@email.cz" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Telefon</label>
+                <input class="form-input" name="phone" type="tel" placeholder="+420 123 456 789" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Poznámka</label>
+              <textarea class="form-textarea" name="notes" placeholder="Máte poznámku nebo dotaz k přihlášce?"></textarea>
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+              <button class="btn btn-primary" type="submit" id="reg-btn">Přihlásit se</button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    async function submitReg(e, c) {
+      e.preventDefault();
+      const form  = e.target;
+      const btn   = document.getElementById('reg-btn');
+      const alert = document.getElementById('reg-alert');
+
+      // Basic validation
+      const fn = form.first_name.value.trim();
+      const ln = form.last_name.value.trim();
+      const em = form.email.value.trim();
+      if (!fn || !ln || !em) {
+        alert.innerHTML = '<div class="alert alert-error">Vyplňte prosím povinná pole (jméno, příjmení, e-mail).</div>';
+        return;
+      }
+
+      alert.innerHTML = '';
+      btn.disabled    = true;
+      btn.textContent = 'Odesílám…';
+
+      try {
+        const res = await fetch('/api/registrations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            course_id:  c.id,
+            first_name: fn,
+            last_name:  ln,
+            email:      em,
+            phone:      form.phone.value.trim(),
+            notes:      form.notes.value.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert.innerHTML = `<div class="alert alert-error">${esc(data.detail || 'Chyba při přihlášení.')}</div>`;
+          btn.disabled    = false;
+          btn.textContent = 'Přihlásit se';
+          return;
+        }
+        renderSuccess(data);
+      } catch {
+        alert.innerHTML = '<div class="alert alert-error">Nastala chyba připojení. Zkuste to prosím znovu.</div>';
+        btn.disabled    = false;
+        btn.textContent = 'Přihlásit se';
+      }
+    }
+
+    function renderSuccess(r) {
+      document.getElementById('reg-section').innerHTML = `
+        <div class="success-box">
+          <div class="success-icon">✅</div>
+          <h3>Přihlášení proběhlo úspěšně!</h3>
+          <p>Přihlásili jste se na kurz <strong>${esc(r.course_name)}</strong>.</p>
+
+          ${Number(r.course_price) > 0 ? `
+            <div class="payment-box">
+              <p class="payment-box-title">Platební instrukce – bankovní převod</p>
+              <div class="payment-row">
+                <span class="lbl">Číslo účtu</span>
+                <span class="val">${esc(r.bank_account)}</span>
+              </div>
+              <div class="payment-row">
+                <span class="lbl">Variabilní symbol</span>
+                <span class="val">${esc(r.variable_symbol)}</span>
+              </div>
+              <div class="payment-row">
+                <span class="lbl">Kurz</span>
+                <span class="val">${esc(r.course_name)}</span>
+              </div>
+              <div class="payment-row">
+                <span class="lbl">Částka k úhradě</span>
+                <span class="val">${Number(r.course_price).toLocaleString('cs-CZ')}&nbsp;Kč</span>
+              </div>
+            </div>
+            <p style="font-size:.83rem;margin-top:14px;color:#166534;">
+              Po přijetí platby vás budeme kontaktovat. Jako variabilní symbol prosím uvádějte číslo výše.
+            </p>
+          ` : `<p style="margin-top:12px;">Kurz je zdarma – není potřeba nic platit.</p>`}
+
+          <a href="/" class="btn btn-outline" style="margin-top:24px;">← Zpět na výpis kurzů</a>
+        </div>
+      `;
+    }
+
+    function esc(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function fmtDate(d) {
+      if (!d) return '';
+      const [y,m,day] = d.split('-');
+      return `${day}.${m}.${y}`;
+    }
+
+    load();
+  </script>
+
+</body>
+</html>

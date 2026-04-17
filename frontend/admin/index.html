@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Planner Admin – Přihlášení</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-wrap { width: 100%; max-width: 380px; padding: 16px; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="card">
+      <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:2rem;margin-bottom:8px;">🗓️</div>
+        <h1 style="font-size:1.4rem;font-weight:700;color:var(--text);">Planner Admin</h1>
+        <p style="color:var(--gray-400);font-size:.9rem;margin-top:4px;">Administrace kurzů a přihlášek</p>
+      </div>
+
+      <div id="alert"></div>
+
+      <form id="form">
+        <div class="form-group">
+          <label class="form-label">Admin token</label>
+          <input class="form-input" type="password" id="token" placeholder="••••••••" required autocomplete="current-password" />
+        </div>
+        <button class="btn btn-primary" type="submit" style="width:100%;" id="btn">
+          Přihlásit se
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    if (sessionStorage.getItem('adminToken')) {
+      window.location.replace('/admin/kurzy.html');
+    }
+
+    document.getElementById('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const token = document.getElementById('token').value.trim();
+      const btn   = document.getElementById('btn');
+      const alert = document.getElementById('alert');
+
+      if (!token) return;
+      btn.disabled    = true;
+      btn.textContent = 'Ověřuji…';
+      alert.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'X-Admin-Token': token },
+        });
+        if (res.ok) {
+          sessionStorage.setItem('adminToken', token);
+          window.location.replace('/admin/kurzy.html');
+        } else {
+          alert.innerHTML = '<div class="alert alert-error">Nesprávný token.</div>';
+          btn.disabled    = false;
+          btn.textContent = 'Přihlásit se';
+        }
+      } catch {
+        alert.innerHTML = '<div class="alert alert-error">Chyba připojení k serveru.</div>';
+        btn.disabled    = false;
+        btn.textContent = 'Přihlásit se';
+      }
+    });
+  </script>
+</body>
+</html>
