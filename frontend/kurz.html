@@ -296,8 +296,17 @@
       if (Number(r.course_price) > 0) generateQR(r);
     }
 
+    function czechAccountToIBAN(account) {
+      const [num, bankCode] = account.replace(/\s/g, '').split('/');
+      const bban = bankCode.padStart(4, '0') + num.padStart(16, '0');
+      // CZ = 12, Z = 35 → "123500" appended for mod-97 check digit calc
+      const checkDigits = String(98 - Number(BigInt(bban + '123500') % 97n)).padStart(2, '0');
+      return `CZ${checkDigits}${bban}`;
+    }
+
     function generateQR(r) {
-      const iban = String(r.bank_account).replace(/\s/g, '');
+      const raw = String(r.bank_account).replace(/\s/g, '');
+      const iban = raw.includes('/') ? czechAccountToIBAN(raw) : raw;
       const amount = Number(r.course_price).toFixed(2);
       const vs = String(r.variable_symbol);
       const spayd = `SPD*1.0*ACC:${iban}*AM:${amount}*CC:CZK*X-VS:${vs}`;
