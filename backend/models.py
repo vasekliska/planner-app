@@ -27,5 +27,15 @@ class RegistrationCreate(BaseModel):
     notes: str = ""
 
 
+class AdminRegistrationCreate(BaseModel):
+    course_id: int
+    first_name: str
+    last_name: str
+    email: str
+    phone: str = ""
+    notes: str = ""
+    payment_status: str = "pending"
+
+
 class PaymentStatusUpdate(BaseModel):
     payment_status: str

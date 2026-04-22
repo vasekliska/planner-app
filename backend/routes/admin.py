@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Header
 from database import get_db, query_all, query_one, execute
-from models import CourseCreate, CourseUpdate, PaymentStatusUpdate
+from models import CourseCreate, CourseUpdate, PaymentStatusUpdate, AdminRegistrationCreate
 
 router = APIRouter()
 
@@ -101,6 +101,50 @@ def admin_deactivate_course(course_id: int, _: str = Depends(require_admin)):
 
 
 # ── Registrations ─────────────────────────────────────────────────────────────
+
+@router.post("/admin/registrations", status_code=201)
+def admin_create_registration(data: AdminRegistrationCreate, _: str = Depends(require_admin)):
+    if data.payment_status not in VALID_PAYMENT_STATUSES:
+        raise HTTPException(status_code=400, detail="Neplatný stav platby")
+    conn = get_db()
+    try:
+        course = query_one(conn, "SELECT * FROM courses WHERE id = %s", (data.course_id,))
+        if not course:
+            raise HTTPException(status_code=404, detail="Kurz nenalezen")
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cur = execute(conn, """
+            INSERT INTO registrations
+                (course_id, first_name, last_name, email, phone, notes, payment_status, variable_symbol, registered_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            data.course_id,
+            data.first_name.strip(), data.last_name.strip(),
+            data.email.lower().strip(), data.phone.strip(), data.notes.strip(),
+            data.payment_status, "temp", now,
+        ))
+        new_id = cur.fetchone()["id"]
+
+        variable_symbol = f"{datetime.now().year}{str(new_id).zfill(4)}"
+        execute(conn, "UPDATE registrations SET variable_symbol = %s WHERE id = %s",
+                (variable_symbol, new_id))
+        conn.commit()
+
+        reg = query_one(conn, "SELECT * FROM registrations WHERE id = %s", (new_id,))
+        reg["bank_account"] = os.getenv("BANK_ACCOUNT", "CZ00 0000 0000 0000 0000 0000")
+        reg["course_name"]  = course["name"]
+        reg["course_price"] = course["price"]
+        return reg
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 
 @router.get("/admin/registrations")
 def admin_list_registrations(_: str = Depends(require_admin)):

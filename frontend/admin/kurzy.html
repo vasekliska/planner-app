@@ -135,6 +135,52 @@
     </div>
   </div>
 
+  <!-- Modal: ruční přidání účastníka -->
+  <div class="modal-overlay" id="reg-modal">
+    <div class="modal">
+      <h2 class="modal-title">Přidat účastníka</h2>
+      <p id="reg-modal-course" style="font-size:.85rem;color:var(--gray-500);margin:-8px 0 16px;"></p>
+      <div id="reg-modal-alert"></div>
+      <form id="reg-form" novalidate>
+        <input type="hidden" id="rf-course-id" />
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Jméno *</label>
+            <input class="form-input" id="rf-first-name" required placeholder="Jan" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Příjmení *</label>
+            <input class="form-input" id="rf-last-name" required placeholder="Novák" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">E-mail *</label>
+          <input class="form-input" id="rf-email" type="email" required placeholder="jan@example.com" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Telefon</label>
+          <input class="form-input" id="rf-phone" placeholder="+420 777 000 000" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Poznámka</label>
+          <input class="form-input" id="rf-notes" placeholder="Volitelná poznámka" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Stav platby</label>
+          <select class="form-select" id="rf-payment-status">
+            <option value="pending">Čeká na platbu</option>
+            <option value="paid">Zaplaceno</option>
+            <option value="cancelled">Zrušeno</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="reg-modal-cancel">Zrušit</button>
+          <button type="submit" class="btn btn-primary" id="reg-modal-save">Přidat účastníka</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const token = sessionStorage.getItem('adminToken');
     if (!token) window.location.replace('/admin/');
@@ -215,6 +261,7 @@
                   ${c.is_active ? 'Deaktivovat' : 'Aktivovat'}
                 </button>
                 <a href="/admin/registrace.html?kurz=${c.id}" class="btn btn-ghost btn-xs">Přihlášky (${reg})</a>
+                <button class="btn btn-primary btn-xs" onclick="openAddReg(${c.id}, ${JSON.stringify(c.name)})">+ Účastník</button>
               </div>
             </td>
           </tr>
@@ -370,6 +417,76 @@
       const [y,m,day] = d.split('-');
       return `${day}.${m}.${y}`;
     }
+
+    // ── Ruční přidání účastníka ────────────────────────────────
+    function openAddReg(courseId, courseName) {
+      document.getElementById('rf-course-id').value = courseId;
+      document.getElementById('reg-modal-course').textContent = courseName;
+      document.getElementById('reg-form').reset();
+      document.getElementById('rf-course-id').value = courseId;
+      document.getElementById('reg-modal-alert').innerHTML = '';
+      document.getElementById('reg-modal-save').disabled = false;
+      document.getElementById('reg-modal-save').textContent = 'Přidat účastníka';
+      document.getElementById('reg-modal').classList.add('open');
+    }
+
+    function closeRegModal() {
+      document.getElementById('reg-modal').classList.remove('open');
+    }
+
+    document.getElementById('reg-modal-cancel').addEventListener('click', closeRegModal);
+    document.getElementById('reg-modal').addEventListener('click', e => {
+      if (e.target === document.getElementById('reg-modal')) closeRegModal();
+    });
+
+    document.getElementById('reg-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn  = document.getElementById('reg-modal-save');
+      const alrt = document.getElementById('reg-modal-alert');
+
+      const firstName = document.getElementById('rf-first-name').value.trim();
+      const lastName  = document.getElementById('rf-last-name').value.trim();
+      const email     = document.getElementById('rf-email').value.trim();
+
+      if (!firstName || !lastName || !email) {
+        alrt.innerHTML = '<div class="alert alert-error">Vyplňte jméno, příjmení a e-mail.</div>';
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Ukládám…';
+      alrt.innerHTML  = '';
+
+      const payload = {
+        course_id:      parseInt(document.getElementById('rf-course-id').value),
+        first_name:     firstName,
+        last_name:      lastName,
+        email,
+        phone:          document.getElementById('rf-phone').value.trim(),
+        notes:          document.getElementById('rf-notes').value.trim(),
+        payment_status: document.getElementById('rf-payment-status').value,
+      };
+
+      try {
+        const res = await fetch('/api/admin/registrations', {
+          method: 'POST', headers: h, body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alrt.innerHTML = `<div class="alert alert-error">${esc(data.detail || 'Chyba při ukládání.')}</div>`;
+          btn.disabled    = false;
+          btn.textContent = 'Přidat účastníka';
+          return;
+        }
+        closeRegModal();
+        await loadCourses();
+        showAlert(`${firstName} ${lastName} byl(a) přidán(a).`, 'success');
+      } catch {
+        alrt.innerHTML = '<div class="alert alert-error">Chyba připojení.</div>';
+        btn.disabled    = false;
+        btn.textContent = 'Přidat účastníka';
+      }
+    });
 
     loadCourses();
   </script>
