@@ -309,7 +309,8 @@
       const iban = raw.includes('/') ? czechAccountToIBAN(raw) : raw;
       const amount = Number(r.course_price).toFixed(2);
       const vs = String(r.variable_symbol);
-      const spayd = `SPD*1.0*ACC:${iban}*AM:${amount}*CC:CZK*X-VS:${vs}`;
+      const msg = String(r.course_name).substring(0, 60);
+      const spayd = `SPD*1.0*ACC:${iban}*AM:${amount}*CC:CZK*X-VS:${vs}*MSG:${msg}`;
       new QRCode(document.getElementById('payment-qr'), {
         text: spayd,
         width: 180,
