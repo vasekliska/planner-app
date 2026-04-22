@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Detail kurzu – Planner</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSi2jPBCkZJ3fd5mCnpmY3YFaxJCOQ5yFCVg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     .detail-wrap { max-width: 780px; margin: 0 auto; padding: 36px 16px 56px; }
 
@@ -51,6 +52,24 @@
     .payment-row:last-child { border-bottom: none; font-weight: 700; }
     .payment-row .lbl { color: var(--gray-600); flex-shrink: 0; }
     .payment-row .val { font-family: monospace; font-size: .95rem; color: var(--text); word-break: break-all; }
+    .qr-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid #bbf7d0;
+    }
+    .qr-wrap p {
+      font-size: .8rem;
+      color: #166534;
+      margin-top: 10px;
+      margin-bottom: 0;
+    }
+    #payment-qr canvas, #payment-qr img {
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.10);
+    }
   </style>
 </head>
 <body>
@@ -261,6 +280,10 @@
                 <span class="lbl">Částka k úhradě</span>
                 <span class="val">${Number(r.course_price).toLocaleString('cs-CZ')}&nbsp;Kč</span>
               </div>
+              <div class="qr-wrap">
+                <div id="payment-qr"></div>
+                <p>Naskenujte QR kód v bankovní aplikaci</p>
+              </div>
             </div>
             <p style="font-size:.83rem;margin-top:14px;color:#166534;">
               Po přijetí platby vás budeme kontaktovat. Jako variabilní symbol prosím uvádějte číslo výše.
@@ -270,6 +293,20 @@
           <a href="/" class="btn btn-outline" style="margin-top:24px;">← Zpět na výpis kurzů</a>
         </div>
       `;
+      if (Number(r.course_price) > 0) generateQR(r);
+    }
+
+    function generateQR(r) {
+      const iban = String(r.bank_account).replace(/\s/g, '');
+      const amount = Number(r.course_price).toFixed(2);
+      const vs = String(r.variable_symbol);
+      const spayd = `SPD*1.0*ACC:${iban}*AM:${amount}*CC:CZK*X-VS:${vs}`;
+      new QRCode(document.getElementById('payment-qr'), {
+        text: spayd,
+        width: 180,
+        height: 180,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
     }
 
     function esc(s) {
