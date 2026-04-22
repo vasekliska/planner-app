@@ -261,7 +261,7 @@
                   ${c.is_active ? 'Deaktivovat' : 'Aktivovat'}
                 </button>
                 <a href="/admin/registrace.html?kurz=${c.id}" class="btn btn-ghost btn-xs">Přihlášky (${reg})</a>
-                <button class="btn btn-primary btn-xs" onclick="openAddReg(${c.id}, ${JSON.stringify(c.name)})">+ Účastník</button>
+                <button class="btn btn-primary btn-xs" onclick="openAddReg(${c.id})">+ Účastník</button>
               </div>
             </td>
           </tr>
@@ -419,7 +419,8 @@
     }
 
     // ── Ruční přidání účastníka ────────────────────────────────
-    function openAddReg(courseId, courseName) {
+    function openAddReg(courseId) {
+      const courseName = (courses.find(x => x.id === courseId) || {}).name || '';
       document.getElementById('rf-course-id').value = courseId;
       document.getElementById('reg-modal-course').textContent = courseName;
       document.getElementById('reg-form').reset();
